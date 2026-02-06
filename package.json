@@ -1,6 +1,9 @@
 {
   "name": "@call-intelligence-labs/db",
-  "version": "1.0.0",
+  "version": "1.0.2",
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +22,8 @@
     "url": "https://github.com/Call-Intelligence-Labs/call-intelligence-db.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "scripts": {
     "build": "tsc",
