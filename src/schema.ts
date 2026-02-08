@@ -37,6 +37,22 @@ export const ghlIntegrations = pgTable("ghl_integrations", {
 });
 
 // -----------------------------------------------------------------------------
+// 2b. WEBHOOK CONFIGS (Alternative to OAuth)
+// -----------------------------------------------------------------------------
+
+export const webhookConfigs = pgTable("webhook_configs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+
+  ghlLocationId: text("ghl_location_id").notNull().unique(),
+  webhookSecret: text("webhook_secret").notNull(), // For signature verification
+  isActive: boolean("is_active").default(true),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------------------------
 // 3. CACHED LEADS (Mirrors GHL Contacts)
 // -----------------------------------------------------------------------------
 
@@ -74,6 +90,11 @@ export const calls = pgTable("calls", {
   audioUrl: text("audio_url"),
   recordingStatus: text("recording_status").default("pending"),
 
+  // Webhook processing fields
+  processingStatus: text("processing_status").default("received"), // "received", "analyzing", "completed", "error"
+  rawWebhookPayload: jsonb("raw_webhook_payload"),
+  errorMessage: text("error_message"),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -98,10 +119,15 @@ export const callAnalysis = pgTable("call_analysis", {
 
 export const userRelations = relations(users, ({ many }) => ({
   integrations: many(ghlIntegrations),
+  webhookConfigs: many(webhookConfigs),
 }));
 
 export const integrationRelations = relations(ghlIntegrations, ({ one }) => ({
   user: one(users, { fields: [ghlIntegrations.userId], references: [users.id] }),
+}));
+
+export const webhookConfigRelations = relations(webhookConfigs, ({ one }) => ({
+  user: one(users, { fields: [webhookConfigs.userId], references: [users.id] }),
 }));
 
 export const leadsRelations = relations(leads, ({ many }) => ({
