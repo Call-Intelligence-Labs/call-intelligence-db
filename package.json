@@ -1,6 +1,6 @@
 {
   "name": "@call-intelligence-labs/db",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "files": [
     "dist"
   ],
@@ -31,7 +31,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "prepublishOnly": "npm run build",
+    "publish:pkg": "npm publish"
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.45.0",

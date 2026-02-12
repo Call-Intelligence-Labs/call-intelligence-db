@@ -53,6 +53,33 @@ export const webhookConfigs = pgTable("webhook_configs", {
 });
 
 // -----------------------------------------------------------------------------
+// 2c. WEBHOOK LOGS (Audit trail for all incoming webhooks)
+// -----------------------------------------------------------------------------
+
+export const webhookLogs = pgTable("webhook_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  source: text("source").notNull(), // 'ghl' or other sources in future
+  ghlLocationId: text("ghl_location_id"), // null if not from GHL or not parsed yet
+
+  // Payload and metadata
+  payload: jsonb("payload").notNull(),
+  headers: jsonb("headers"), // Store relevant headers for debugging
+
+  // Processing status
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'error'
+  errorMessage: text("error_message"),
+
+  // Links to related records once processed
+  callId: uuid("call_id").references(() => calls.id),
+  leadId: uuid("lead_id").references(() => leads.id),
+
+  // Timestamps
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+});
+
+// -----------------------------------------------------------------------------
 // 3. CACHED LEADS (Mirrors GHL Contacts)
 // -----------------------------------------------------------------------------
 
@@ -141,4 +168,9 @@ export const callsRelations = relations(calls, ({ one }) => ({
 
 export const analysisRelations = relations(callAnalysis, ({ one }) => ({
   call: one(calls, { fields: [callAnalysis.callId], references: [calls.id] }),
+}));
+
+export const webhookLogsRelations = relations(webhookLogs, ({ one }) => ({
+  call: one(calls, { fields: [webhookLogs.callId], references: [calls.id] }),
+  lead: one(leads, { fields: [webhookLogs.leadId], references: [leads.id] }),
 }));
