@@ -248,9 +248,6 @@ export const locationRelations = relations(locations, ({ one, many }) => ({
 // User relations
 export const userRelations = relations(users, ({ many }) => ({
   agencyMemberships: many(agencyMembers),
-  // Legacy relations - will be deprecated
-  integrations: many(ghlIntegrations, { relationName: "legacy_user_integrations" }),
-  webhookConfigs: many(webhookConfigs, { relationName: "legacy_user_webhook_configs" }),
 }));
 
 // Agency member relations
