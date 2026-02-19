@@ -103,7 +103,7 @@ export const agencyMembers = pgTable("agency_members", {
 }));
 
 // -----------------------------------------------------------------------------
-// 5. GHL INTEGRATION (OAuth & Config per Location)
+// 5. GHL INTEGRATION (OAuth & Private Integration API Key per Location)
 // -----------------------------------------------------------------------------
 
 export const ghlIntegrations = pgTable("ghl_integrations", {
@@ -111,9 +111,15 @@ export const ghlIntegrations = pgTable("ghl_integrations", {
 
   locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
 
+  // Auth type: 'oauth' for OAuth tokens, 'api_key' for Private Integration
+  authType: text("auth_type").notNull().default('api_key'),
+
+  // For both auth types: OAuth access token OR Private Integration API key
   accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
+
+  // OAuth only (nullable for Private Integration)
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

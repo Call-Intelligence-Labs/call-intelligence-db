@@ -15,6 +15,13 @@
       "when": 1770892773422,
       "tag": "0001_light_madame_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771515474753,
+      "tag": "0002_lumpy_groot",
+      "breakpoints": true
     }
   ]
 }
