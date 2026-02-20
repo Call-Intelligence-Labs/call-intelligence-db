@@ -221,13 +221,66 @@ export const callAnalysis = pgTable("call_analysis", {
   id: uuid("id").defaultRandom().primaryKey(),
   callId: uuid("call_id").notNull().references(() => calls.id, { onDelete: 'cascade' }),
 
-  summary: text("summary"),
-  sentimentScore: integer("sentiment_score"),
+  // Raw transcript from AssemblyAI
   transcript: jsonb("transcript"),
 
-  objections: jsonb("objections").$type<string[]>(),
-  coachingPoints: jsonb("coaching_points").$type<string[]>(),
-  actionItems: jsonb("action_items").$type<{ task: string; priority: string }[]>(),
+  // ── Call Validity ──
+  isValidProspect: boolean("is_valid_prospect"),
+  invalidReason: text("invalid_reason"),       // enum: wrong_location, wrong_number, not_a_prospect, already_customer, spam_or_test, language_barrier, no_answer, other
+  invalidReasonContext: text("invalid_reason_context"),
+
+  // ── Outcome ──
+  outcome: text("outcome"),                    // enum: booked, follow_up, declined, pending
+
+  // ── Non-Booking Reason ──
+  primaryNonBookingReason: text("primary_non_booking_reason"),  // enum: price, timing, needs_more_time, decision_maker_approval, scheduling_conflict, competitor_comparison, trust_concerns, value_uncertainty, not_ready, financing_issues, medical_concerns, other
+  primaryNonBookingReasonContext: text("primary_non_booking_reason_context"),
+
+  // ── Objections & Concerns (structured JSONB arrays) ──
+  objections: jsonb("objections").$type<{
+    category: string;
+    resolved: boolean;
+    context: string;
+    resolution_context?: string | null;
+  }[]>(),
+  concerns: jsonb("concerns").$type<{
+    type: 'expressed' | 'implied';
+    category: string;
+    addressed: boolean;
+    context: string;
+    addressed_context?: string | null;
+  }[]>(),
+
+  // ── Closing Behavior ──
+  closingAttempted: boolean("closing_attempted"),
+  closingTechnique: text("closing_technique"),   // enum: direct_ask, assumptive, alternative_choice, urgency_based, soft_suggestion, trial_close, none
+  closingContext: text("closing_context"),
+
+  // ── Seller Technique ──
+  discoveryPerformed: boolean("discovery_performed"),
+  discoveryContext: text("discovery_context"),
+  valuePropositionPresented: boolean("value_proposition_presented"),
+  valuePropositionContext: text("value_proposition_context"),
+  urgencyCreated: boolean("urgency_created"),
+  urgencyContext: text("urgency_context"),
+  nextStepsEstablished: boolean("next_steps_established"),
+  nextStepsContext: text("next_steps_context"),
+
+  // ── Seller Demeanor (1-5 scale) ──
+  sellerConfidence: integer("seller_confidence"),
+  sellerEnthusiasm: integer("seller_enthusiasm"),
+  sellerProfessionalism: integer("seller_professionalism"),
+  sellerEmpathy: integer("seller_empathy"),
+
+  // ── Prospect Behavior ──
+  prospectEngagement: text("prospect_engagement"),  // enum: high, moderate, low
+
+  // ── Talk Ratio (calculated from transcript, not AI) ──
+  sellerTalkRatio: integer("seller_talk_ratio"),       // 0-100 percentage
+  prospectTalkRatio: integer("prospect_talk_ratio"),   // 0-100 percentage
+
+  // ── Summary ──
+  summary: text("summary"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
