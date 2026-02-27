@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, boolean, integer, jsonb, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // -----------------------------------------------------------------------------
 // 1. AGENCIES (Call centers / GHL Agencies)
@@ -11,6 +12,11 @@ export const agencies = pgTable("agencies", {
   name: text("name").notNull(),
   slug: text("slug").unique().notNull(), // For URL routing: /dashboard/agency-slug
   logoUrl: text("logo_url"),
+
+  // Company context (used by AI for talking points & analysis)
+  industry: text("industry"),                       // e.g. "Medical Aesthetics", "Dental", "Real Estate"
+  companyDescription: text("company_description"),  // Elevator pitch about the company
+  brandVoice: text("brand_voice"),                  // Tone/style guidance for AI output
 
   // Agency-level settings
   settings: jsonb("settings").$type<{
@@ -51,6 +57,31 @@ export const locations = pgTable("locations", {
       summary?: string;
     };
   }>(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------------------------
+// 2b. OFFERS (Location-specific services/products for AI context)
+// -----------------------------------------------------------------------------
+
+export const offers = pgTable("offers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
+
+  name: text("name").notNull(),                    // e.g. "Morpheus8 Consultation"
+  description: text("description"),                // What the offer is
+  pricing: text("pricing"),                        // Flexible: "$2,500", "Starting at $199/mo", "Free consultation"
+  targetAudience: text("target_audience"),          // Who this is for
+  sellingPoints: jsonb("selling_points").$type<string[]>(), // Key value propositions
+  objectionResponses: jsonb("objection_responses").$type<{
+    objection: string;
+    response: string;
+  }[]>(),                                          // Pre-loaded rebuttals
+
+  isActive: boolean("is_active").default(true),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -192,6 +223,28 @@ export const leads = pgTable("leads", {
 }));
 
 // -----------------------------------------------------------------------------
+// 6b. SELLERS (GHL Users who make calls - mirrors GHL Users)
+// -----------------------------------------------------------------------------
+
+export const sellers = pgTable("sellers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  ghlUserId: text("ghl_user_id").notNull(), // External ID from GHL
+
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  email: text("email"),
+  phone: text("phone"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  // Unique constraint: one user per location
+  uniqueLocationUser: { columns: [table.locationId, table.ghlUserId] },
+}));
+
+// -----------------------------------------------------------------------------
 // 7. CALL INTELLIGENCE
 // -----------------------------------------------------------------------------
 
@@ -202,6 +255,7 @@ export const calls = pgTable("calls", {
   leadId: uuid("lead_id").references(() => leads.id),
 
   ghlCallId: text("ghl_call_id").unique(),
+  sellerId: uuid("seller_id").references(() => sellers.id),
   direction: text("direction"),
   duration: integer("duration"),
   status: text("status"),
@@ -300,8 +354,14 @@ export const locationRelations = relations(locations, ({ one, many }) => ({
   agency: one(agencies, { fields: [locations.agencyId], references: [agencies.id] }),
   ghlIntegration: one(ghlIntegrations),
   webhookConfig: one(webhookConfigs),
+  offers: many(offers),
   leads: many(leads),
   calls: many(calls),
+}));
+
+// Offer relations
+export const offerRelations = relations(offers, ({ one }) => ({
+  location: one(locations, { fields: [offers.locationId], references: [locations.id] }),
 }));
 
 // User relations
@@ -331,10 +391,17 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   calls: many(calls),
 }));
 
+// Sellers relations
+export const sellersRelations = relations(sellers, ({ one, many }) => ({
+  location: one(locations, { fields: [sellers.locationId], references: [locations.id] }),
+  calls: many(calls),
+}));
+
 // Calls relations
 export const callsRelations = relations(calls, ({ one }) => ({
   location: one(locations, { fields: [calls.locationId], references: [locations.id] }),
   lead: one(leads, { fields: [calls.leadId], references: [leads.id] }),
+  seller: one(sellers, { fields: [calls.sellerId], references: [sellers.id] }),
   analysis: one(callAnalysis, { fields: [calls.id], references: [callAnalysis.callId] }),
 }));
 
