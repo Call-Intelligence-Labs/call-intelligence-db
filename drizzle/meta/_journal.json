@@ -22,6 +22,20 @@
       "when": 1771515474753,
       "tag": "0002_lumpy_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1771515600000,
+      "tag": "0003_add_sellers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771601474753,
+      "tag": "0004_agency_member_locations",
+      "breakpoints": true
     }
   ]
 }

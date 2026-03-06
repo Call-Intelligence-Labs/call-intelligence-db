@@ -340,7 +340,42 @@ export const callAnalysis = pgTable("call_analysis", {
 });
 
 // -----------------------------------------------------------------------------
-// 8. RELATIONS
+// 8. DIALER ACTIVITY (Tracks skip/complete actions on opportunities)
+// -----------------------------------------------------------------------------
+
+export const dialerActivity = pgTable("dialer_activity", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  opportunityId: text("opportunity_id").notNull(),    // GHL opportunity ID (external)
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+
+  action: text("action").notNull(),                   // 'called' | 'skipped'
+  cooldownUntil: timestamp("cooldown_until").notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------------------------
+// 9. AGENCY MEMBER LOCATIONS (Location-level access control)
+// -----------------------------------------------------------------------------
+// If a member has NO rows here → they see all locations in their agency.
+// If a member has ANY rows here → they only see those specific locations.
+
+export const agencyMemberLocations = pgTable("agency_member_locations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  agencyMemberId: uuid("agency_member_id").notNull()
+    .references(() => agencyMembers.id, { onDelete: 'cascade' }),
+  locationId: uuid("location_id").notNull()
+    .references(() => locations.id, { onDelete: 'cascade' }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueMemberLocation: { columns: [table.agencyMemberId, table.locationId] },
+}));
+
+// -----------------------------------------------------------------------------
+// 10. RELATIONS
 // -----------------------------------------------------------------------------
 
 // Agency relations
@@ -357,6 +392,7 @@ export const locationRelations = relations(locations, ({ one, many }) => ({
   offers: many(offers),
   leads: many(leads),
   calls: many(calls),
+  dialerActivity: many(dialerActivity),
 }));
 
 // Offer relations
@@ -370,9 +406,16 @@ export const userRelations = relations(users, ({ many }) => ({
 }));
 
 // Agency member relations
-export const agencyMemberRelations = relations(agencyMembers, ({ one }) => ({
+export const agencyMemberRelations = relations(agencyMembers, ({ one, many }) => ({
   user: one(users, { fields: [agencyMembers.userId], references: [users.id] }),
   agency: one(agencies, { fields: [agencyMembers.agencyId], references: [agencies.id] }),
+  locationAccess: many(agencyMemberLocations),
+}));
+
+// Agency member location relations
+export const agencyMemberLocationRelations = relations(agencyMemberLocations, ({ one }) => ({
+  member: one(agencyMembers, { fields: [agencyMemberLocations.agencyMemberId], references: [agencyMembers.id] }),
+  location: one(locations, { fields: [agencyMemberLocations.locationId], references: [locations.id] }),
 }));
 
 // GHL Integration relations
@@ -415,4 +458,9 @@ export const webhookLogsRelations = relations(webhookLogs, ({ one }) => ({
   location: one(locations, { fields: [webhookLogs.locationId], references: [locations.id] }),
   call: one(calls, { fields: [webhookLogs.callId], references: [calls.id] }),
   lead: one(leads, { fields: [webhookLogs.leadId], references: [leads.id] }),
+}));
+
+// Dialer Activity relations
+export const dialerActivityRelations = relations(dialerActivity, ({ one }) => ({
+  location: one(locations, { fields: [dialerActivity.locationId], references: [locations.id] }),
 }));
