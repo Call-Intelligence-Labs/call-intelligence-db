@@ -36,6 +36,13 @@
       "when": 1771601474753,
       "tag": "0004_agency_member_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782700000000,
+      "tag": "0005_campaigns_and_attribution",
+      "breakpoints": true
     }
   ]
 }
