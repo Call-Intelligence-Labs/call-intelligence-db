@@ -200,6 +200,29 @@ export const webhookLogs = pgTable("webhook_logs", {
 });
 
 // -----------------------------------------------------------------------------
+// 5d. CAMPAIGNS (Marketing/ad campaigns that generate leads)
+// -----------------------------------------------------------------------------
+// Acquisition source for leads (e.g. a Meta ad campaign). Distinct from `offers`
+// (what is being sold). Keyed on the stable platform campaign id; `name` is a
+// mutable display label. Spend/status/targets can be added later.
+
+export const campaigns = pgTable("campaigns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  ghlCampaignId: text("ghl_campaign_id").notNull(), // Stable platform campaign id (e.g. Meta campaignId)
+
+  name: text("name"),       // Human-readable campaign name (mutable label)
+  channel: text("channel"), // 'facebook' | 'google' | ... (from attribution source/medium)
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  // Unique constraint: one campaign per location
+  uniqueLocationCampaign: { columns: [table.locationId, table.ghlCampaignId] },
+}));
+
+// -----------------------------------------------------------------------------
 // 6. CACHED LEADS (Mirrors GHL Contacts)
 // -----------------------------------------------------------------------------
 
@@ -214,6 +237,16 @@ export const leads = pgTable("leads", {
   email: text("email"),
   phone: text("phone"),
   tags: jsonb("tags").$type<string[]>(),
+
+  // ── First-touch attribution (set immutably on insert; see ghl-processor upsertLead) ──
+  ghlCreatedAt: timestamp("ghl_created_at", { withTimezone: true }), // GHL contact creation time (speed-to-lead clock start)
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: 'set null' }),
+  attribution: jsonb("attribution").$type<Record<string, unknown>>(), // Full contact.attributionSource snapshot
+  adSetId: text("ad_set_id"),
+  adId: text("ad_id"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  sessionSource: text("session_source"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -267,6 +300,8 @@ export const calls = pgTable("calls", {
   processingStatus: text("processing_status").default("received"), // "received", "analyzing", "completed", "error"
   rawWebhookPayload: jsonb("raw_webhook_payload"),
   errorMessage: text("error_message"),
+
+  callAt: timestamp("call_at", { withTimezone: true }), // Actual call time (GHL message dateAdded), distinct from row createdAt
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -392,6 +427,7 @@ export const locationRelations = relations(locations, ({ one, many }) => ({
   offers: many(offers),
   leads: many(leads),
   calls: many(calls),
+  campaigns: many(campaigns),
   dialerActivity: many(dialerActivity),
 }));
 
@@ -431,7 +467,14 @@ export const webhookConfigRelations = relations(webhookConfigs, ({ one }) => ({
 // Leads relations
 export const leadsRelations = relations(leads, ({ one, many }) => ({
   location: one(locations, { fields: [leads.locationId], references: [locations.id] }),
+  campaign: one(campaigns, { fields: [leads.campaignId], references: [campaigns.id] }),
   calls: many(calls),
+}));
+
+// Campaign relations
+export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
+  location: one(locations, { fields: [campaigns.locationId], references: [locations.id] }),
+  leads: many(leads),
 }));
 
 // Sellers relations
