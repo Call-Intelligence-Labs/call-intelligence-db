@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 
@@ -220,6 +220,20 @@ export const campaigns = pgTable("campaigns", {
 }, (table) => ({
   // Unique constraint: one campaign per location
   uniqueLocationCampaign: { columns: [table.locationId, table.ghlCampaignId] },
+}));
+
+// Monthly ad spend per campaign (manually entered). Powers cost-per-booking.
+export const campaignSpend = pgTable("campaign_spend", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  campaignId: uuid("campaign_id").notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  month: date("month").notNull(),                              // first day of the spend month
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueCampaignMonth: { columns: [table.campaignId, table.month] },
 }));
 
 // -----------------------------------------------------------------------------
@@ -475,6 +489,12 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
 export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   location: one(locations, { fields: [campaigns.locationId], references: [locations.id] }),
   leads: many(leads),
+  spend: many(campaignSpend),
+}));
+
+// Campaign spend relations
+export const campaignSpendRelations = relations(campaignSpend, ({ one }) => ({
+  campaign: one(campaigns, { fields: [campaignSpend.campaignId], references: [campaigns.id] }),
 }));
 
 // Sellers relations
