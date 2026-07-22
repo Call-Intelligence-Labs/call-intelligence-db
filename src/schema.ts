@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 
@@ -424,7 +424,66 @@ export const agencyMemberLocations = pgTable("agency_member_locations", {
 }));
 
 // -----------------------------------------------------------------------------
-// 10. RELATIONS
+// 10. CALL LISTS (Saved lists of people to call)
+// -----------------------------------------------------------------------------
+// A generated, persisted set of people to work through. Follow-ups produces a list
+// (e.g. "Should be called"), the dialer opens one and calls through it. Persisting these
+// — instead of rebuilding a throwaway in-memory session each time — is what gives us call
+// history and lets two people work the same list without colliding.
+
+export const callLists = pgTable("call_lists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull()
+    .references(() => locations.id, { onDelete: 'cascade' }),
+
+  name: text("name").notNull(),                        // "Should be called · Glendora · 22 Jul"
+  source: text("source").notNull(),                    // 'followups' | 'dialer_scan' | 'manual'
+  status: text("status").notNull().default("active"),  // 'active' | 'completed' | 'archived'
+
+  // users.id is the Google Auth uid (text), not a uuid.
+  createdByUserId: text("created_by_user_id")
+    .references(() => users.id, { onDelete: 'set null' }),
+  meta: jsonb("meta").$type<Record<string, unknown>>(), // filters/window used, so it's reproducible
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const callListItems = pgTable("call_list_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  listId: uuid("list_id").notNull()
+    .references(() => callLists.id, { onDelete: 'cascade' }),
+
+  // External GHL contact id, deliberately NOT a FK to `leads`: SMS-only leads frequently have
+  // no leads row, and those are exactly the ones follow-ups surfaces. `leadId` links when we
+  // happen to have one.
+  ghlContactId: text("ghl_contact_id").notNull(),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: 'set null' }),
+
+  name: text("name"),
+  phone: text("phone"),
+  reason: text("reason"),                              // why they're on the list (the hook)
+  talkingPoints: jsonb("talking_points").$type<string[]>(),
+  score: integer("score"),                             // conversion score at generation time
+
+  position: integer("position").notNull().default(0),  // rank when the list was generated
+  status: text("status").notNull().default("pending"), // 'pending' | 'called' | 'skipped'
+  outcome: text("outcome"),
+  calledAt: timestamp("called_at"),
+  calledByUserId: text("called_by_user_id")   // users.id is the Google Auth uid (text)
+    .references(() => users.id, { onDelete: 'set null' }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // A contact can't appear twice on the same list (guards against a double push).
+  uniqueListContact: uniqueIndex("call_list_items_list_contact_idx")
+    .on(table.listId, table.ghlContactId),
+}));
+
+// -----------------------------------------------------------------------------
+// 11. RELATIONS
 // -----------------------------------------------------------------------------
 
 // Agency relations
@@ -443,6 +502,20 @@ export const locationRelations = relations(locations, ({ one, many }) => ({
   calls: many(calls),
   campaigns: many(campaigns),
   dialerActivity: many(dialerActivity),
+  callLists: many(callLists),
+}));
+
+// Call list relations
+export const callListRelations = relations(callLists, ({ one, many }) => ({
+  location: one(locations, { fields: [callLists.locationId], references: [locations.id] }),
+  createdBy: one(users, { fields: [callLists.createdByUserId], references: [users.id] }),
+  items: many(callListItems),
+}));
+
+export const callListItemRelations = relations(callListItems, ({ one }) => ({
+  list: one(callLists, { fields: [callListItems.listId], references: [callLists.id] }),
+  lead: one(leads, { fields: [callListItems.leadId], references: [leads.id] }),
+  calledBy: one(users, { fields: [callListItems.calledByUserId], references: [users.id] }),
 }));
 
 // Offer relations
