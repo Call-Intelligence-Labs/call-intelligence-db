@@ -43,6 +43,13 @@
       "when": 1782700000000,
       "tag": "0005_campaigns_and_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0006_campaign_spend",
+      "breakpoints": true
     }
   ]
 }
