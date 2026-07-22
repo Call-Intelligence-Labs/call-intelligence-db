@@ -50,6 +50,13 @@
       "when": 1783000000000,
       "tag": "0006_campaign_spend",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783086400000,
+      "tag": "0007_call_lists",
+      "breakpoints": true
     }
   ]
 }
