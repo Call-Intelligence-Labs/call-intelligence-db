@@ -486,10 +486,11 @@ export const callListItems = pgTable("call_list_items", {
 // 10b. FOLLOW-UP REPORTS
 // -----------------------------------------------------------------------------
 
-// A saved follow-up report: the params that produced it plus the full result. Today reports run in
-// the browser and live only in localStorage (per-person, per-device, capped). Persisting them makes
-// them survive reloads/devices and gives a durable history. Scoped to the agency and the user who
-// ran it (per-creator visibility for now).
+// A saved follow-up report: the params that produced it plus the result. Doubles as the job row for
+// background generation — a report is enqueued (status='queued', result=null), a worker runs it
+// (status='running' → 'done' with a result, or 'error'), and the client polls. Scoped to the agency
+// and the user who ran it (per-creator visibility; the worker rebuilds that user from createdByUserId
+// since it has no Firebase token).
 //
 // Unlike call_list_items, the result is stored as a JSONB blob rather than normalized rows: a report
 // is a read-only snapshot consumed whole, and its threads carry heterogeneous per-view fields
@@ -514,10 +515,16 @@ export const followupReports = pgTable("followup_reports", {
   windowTo: timestamp("window_to").notNull(),
   waitingHours: integer("waiting_hours"),
 
-  // The full FollowupsResponse (generatedAt, summary, threads, scannedCount, …).
-  result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+  // Job lifecycle. A row is created 'queued' with no result; the worker fills result + flips to
+  // 'done', or records error + flips to 'error'.
+  status: text("status").notNull().default("queued"), // 'queued' | 'running' | 'done' | 'error'
+  error: text("error"),
+
+  // The full FollowupsResponse (generatedAt, summary, threads, scannedCount, …). Null until 'done'.
+  result: jsonb("result").$type<Record<string, unknown>>(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(), // for polling / stuck-job detection
 }, (table) => ({
   // The list query is "this user's reports, newest first".
   byUser: index("followup_reports_user_idx").on(table.createdByUserId, table.createdAt),
