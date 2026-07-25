@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 
@@ -483,6 +483,47 @@ export const callListItems = pgTable("call_list_items", {
 }));
 
 // -----------------------------------------------------------------------------
+// 10b. FOLLOW-UP REPORTS
+// -----------------------------------------------------------------------------
+
+// A saved follow-up report: the params that produced it plus the full result. Today reports run in
+// the browser and live only in localStorage (per-person, per-device, capped). Persisting them makes
+// them survive reloads/devices and gives a durable history. Scoped to the agency and the user who
+// ran it (per-creator visibility for now).
+//
+// Unlike call_list_items, the result is stored as a JSONB blob rather than normalized rows: a report
+// is a read-only snapshot consumed whole, and its threads carry heterogeneous per-view fields
+// (strengths/issues/coaching for "bad"; signals/talkingPoints/score for opportunities). Nothing
+// queries a single thread out of a report, so normalizing would be churn for no benefit.
+export const followupReports = pgTable("followup_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // Reports can span "all" locations, so scope is the agency, not a single location FK.
+  agencyId: uuid("agency_id").notNull()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+
+  // users.id is the Google Auth uid (text), not a uuid — matches call_lists.
+  createdByUserId: text("created_by_user_id").notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+
+  view: text("view").notNull(),               // 'ignored' | 'bad' | 'opportunities'
+  locationId: text("location_id").notNull(),  // "all" or a location UUID — text, not an FK
+  locationName: text("location_name").notNull(),
+
+  windowFrom: timestamp("window_from").notNull(),
+  windowTo: timestamp("window_to").notNull(),
+  waitingHours: integer("waiting_hours"),
+
+  // The full FollowupsResponse (generatedAt, summary, threads, scannedCount, …).
+  result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // The list query is "this user's reports, newest first".
+  byUser: index("followup_reports_user_idx").on(table.createdByUserId, table.createdAt),
+}));
+
+// -----------------------------------------------------------------------------
 // 11. RELATIONS
 // -----------------------------------------------------------------------------
 
@@ -516,6 +557,12 @@ export const callListItemRelations = relations(callListItems, ({ one }) => ({
   list: one(callLists, { fields: [callListItems.listId], references: [callLists.id] }),
   lead: one(leads, { fields: [callListItems.leadId], references: [leads.id] }),
   calledBy: one(users, { fields: [callListItems.calledByUserId], references: [users.id] }),
+}));
+
+// Follow-up report relations
+export const followupReportRelations = relations(followupReports, ({ one }) => ({
+  agency: one(agencies, { fields: [followupReports.agencyId], references: [agencies.id] }),
+  createdBy: one(users, { fields: [followupReports.createdByUserId], references: [users.id] }),
 }));
 
 // Offer relations
