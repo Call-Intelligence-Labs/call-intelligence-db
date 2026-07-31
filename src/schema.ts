@@ -531,6 +531,34 @@ export const followupReports = pgTable("followup_reports", {
 }));
 
 // -----------------------------------------------------------------------------
+// Problem reports — in-app "report a problem" submissions from users, read by admins.
+// Deliberately simple: a body, who sent it, which agency they were in, and a resolve flag.
+// -----------------------------------------------------------------------------
+export const problemReports = pgTable("problem_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // users.id is the Google Auth uid (text), not a uuid — matches followup_reports/call_lists.
+  reporterUserId: text("reporter_user_id").notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  reporterEmail: text("reporter_email"),
+
+  // Which agency they were working in when they reported (context; kept if the agency is deleted).
+  agencyId: uuid("agency_id").references(() => agencies.id, { onDelete: 'set null' }),
+
+  body: text("body").notNull(),
+  // Optional "where I was" context the client attaches (e.g. the page path) to aid triage.
+  pageContext: text("page_context"),
+
+  status: text("status").notNull().default("open"), // 'open' | 'resolved'
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+}, (table) => ({
+  // The admin list query is "newest open first".
+  byStatus: index("problem_reports_status_idx").on(table.status, table.createdAt),
+}));
+
+// -----------------------------------------------------------------------------
 // 11. RELATIONS
 // -----------------------------------------------------------------------------
 
@@ -570,6 +598,12 @@ export const callListItemRelations = relations(callListItems, ({ one }) => ({
 export const followupReportRelations = relations(followupReports, ({ one }) => ({
   agency: one(agencies, { fields: [followupReports.agencyId], references: [agencies.id] }),
   createdBy: one(users, { fields: [followupReports.createdByUserId], references: [users.id] }),
+}));
+
+// Problem report relations
+export const problemReportRelations = relations(problemReports, ({ one }) => ({
+  reporter: one(users, { fields: [problemReports.reporterUserId], references: [users.id] }),
+  agency: one(agencies, { fields: [problemReports.agencyId], references: [agencies.id] }),
 }));
 
 // Offer relations
