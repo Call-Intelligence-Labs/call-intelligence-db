@@ -1,0 +1,1 @@
+ALTER TABLE "problem_reports" ADD COLUMN "comments" jsonb DEFAULT '[]'::jsonb NOT NULL;

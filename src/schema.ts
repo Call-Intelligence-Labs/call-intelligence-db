@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 // -----------------------------------------------------------------------------
 // 1. AGENCIES (Call centers / GHL Agencies)
@@ -534,6 +534,18 @@ export const followupReports = pgTable("followup_reports", {
 // Problem reports — in-app "report a problem" submissions from users, read by admins.
 // Deliberately simple: a body, who sent it, which agency they were in, and a resolve flag.
 // -----------------------------------------------------------------------------
+// One comment on a problem report. Stored as a JSONB array on the report (low volume, always
+// fetched with the ticket), so no separate table. `isStaff` marks an admin/support reply vs the
+// reporter's own message.
+export type ProblemReportComment = {
+  id: string;
+  authorUserId: string;
+  authorEmail: string | null;
+  isStaff: boolean;
+  body: string;
+  createdAt: string; // ISO
+};
+
 export const problemReports = pgTable("problem_reports", {
   id: uuid("id").defaultRandom().primaryKey(),
 
@@ -550,6 +562,9 @@ export const problemReports = pgTable("problem_reports", {
   pageContext: text("page_context"),
 
   status: text("status").notNull().default("open"), // 'open' | 'resolved'
+
+  // The two-way comment thread (reporter + admin/support). See ProblemReportComment.
+  comments: jsonb("comments").$type<ProblemReportComment[]>().default(sql`'[]'::jsonb`).notNull(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   resolvedAt: timestamp("resolved_at"),
