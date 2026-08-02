@@ -496,6 +496,14 @@ export const callListItems = pgTable("call_list_items", {
 // is a read-only snapshot consumed whole, and its threads carry heterogeneous per-view fields
 // (strengths/issues/coaching for "bad"; signals/talkingPoints/score for opportunities). Nothing
 // queries a single thread out of a report, so normalizing would be churn for no benefit.
+// "Pull by" scope for a follow-up report — narrows the scan to one campaign tag or one opportunity
+// pipeline (or neither). Stored on the report row so the background worker can honour it.
+export type FollowupReportScope = {
+  tag?: string;
+  pipelineId?: string;
+  pipelineName?: string;
+};
+
 export const followupReports = pgTable("followup_reports", {
   id: uuid("id").defaultRandom().primaryKey(),
 
@@ -514,6 +522,10 @@ export const followupReports = pgTable("followup_reports", {
   windowFrom: timestamp("window_from").notNull(),
   windowTo: timestamp("window_to").notNull(),
   waitingHours: integer("waiting_hours"),
+
+  // Optional "pull by" scope — narrows the scan to a campaign tag or an opportunity pipeline.
+  // Null = the whole location. pipelineName is kept for display alongside the id.
+  scope: jsonb("scope").$type<FollowupReportScope>(),
 
   // Job lifecycle. A row is created 'queued' with no result; the worker fills result + flips to
   // 'done', or records error + flips to 'error'.

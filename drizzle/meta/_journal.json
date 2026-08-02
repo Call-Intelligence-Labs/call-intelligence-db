@@ -85,6 +85,13 @@
       "when": 1785685236010,
       "tag": "0011_bouncy_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785686846710,
+      "tag": "0012_silly_magik",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "followup_reports" ADD COLUMN "scope" jsonb;
