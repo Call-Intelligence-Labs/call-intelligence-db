@@ -57,6 +57,41 @@
       "when": 1783086400000,
       "tag": "0007_call_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784976823439,
+      "tag": "0008_steady_otto_octavius",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784981215274,
+      "tag": "0009_tiresome_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785521652693,
+      "tag": "0010_short_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785685236010,
+      "tag": "0011_bouncy_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785686846710,
+      "tag": "0012_silly_magik",
+      "breakpoints": true
     }
   ]
 }

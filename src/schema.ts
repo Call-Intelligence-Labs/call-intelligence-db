@@ -1,6 +1,6 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, numeric, date, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 // -----------------------------------------------------------------------------
 // 1. AGENCIES (Call centers / GHL Agencies)
@@ -483,6 +483,109 @@ export const callListItems = pgTable("call_list_items", {
 }));
 
 // -----------------------------------------------------------------------------
+// 10b. FOLLOW-UP REPORTS
+// -----------------------------------------------------------------------------
+
+// A saved follow-up report: the params that produced it plus the result. Doubles as the job row for
+// background generation — a report is enqueued (status='queued', result=null), a worker runs it
+// (status='running' → 'done' with a result, or 'error'), and the client polls. Scoped to the agency
+// and the user who ran it (per-creator visibility; the worker rebuilds that user from createdByUserId
+// since it has no Firebase token).
+//
+// Unlike call_list_items, the result is stored as a JSONB blob rather than normalized rows: a report
+// is a read-only snapshot consumed whole, and its threads carry heterogeneous per-view fields
+// (strengths/issues/coaching for "bad"; signals/talkingPoints/score for opportunities). Nothing
+// queries a single thread out of a report, so normalizing would be churn for no benefit.
+// "Pull by" scope for a follow-up report — narrows the scan to one campaign tag or one opportunity
+// pipeline (or neither). Stored on the report row so the background worker can honour it.
+export type FollowupReportScope = {
+  tag?: string;
+  pipelineId?: string;
+  pipelineName?: string;
+};
+
+export const followupReports = pgTable("followup_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // Reports can span "all" locations, so scope is the agency, not a single location FK.
+  agencyId: uuid("agency_id").notNull()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+
+  // users.id is the Google Auth uid (text), not a uuid — matches call_lists.
+  createdByUserId: text("created_by_user_id").notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+
+  view: text("view").notNull(),               // 'ignored' | 'bad' | 'opportunities'
+  locationId: text("location_id").notNull(),  // "all" or a location UUID — text, not an FK
+  locationName: text("location_name").notNull(),
+
+  windowFrom: timestamp("window_from").notNull(),
+  windowTo: timestamp("window_to").notNull(),
+  waitingHours: integer("waiting_hours"),
+
+  // Optional "pull by" scope — narrows the scan to a campaign tag or an opportunity pipeline.
+  // Null = the whole location. pipelineName is kept for display alongside the id.
+  scope: jsonb("scope").$type<FollowupReportScope>(),
+
+  // Job lifecycle. A row is created 'queued' with no result; the worker fills result + flips to
+  // 'done', or records error + flips to 'error'.
+  status: text("status").notNull().default("queued"), // 'queued' | 'running' | 'done' | 'error'
+  error: text("error"),
+
+  // The full FollowupsResponse (generatedAt, summary, threads, scannedCount, …). Null until 'done'.
+  result: jsonb("result").$type<Record<string, unknown>>(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(), // for polling / stuck-job detection
+}, (table) => ({
+  // The list query is "this user's reports, newest first".
+  byUser: index("followup_reports_user_idx").on(table.createdByUserId, table.createdAt),
+}));
+
+// -----------------------------------------------------------------------------
+// Problem reports — in-app "report a problem" submissions from users, read by admins.
+// Deliberately simple: a body, who sent it, which agency they were in, and a resolve flag.
+// -----------------------------------------------------------------------------
+// One comment on a problem report. Stored as a JSONB array on the report (low volume, always
+// fetched with the ticket), so no separate table. `isStaff` marks an admin/support reply vs the
+// reporter's own message.
+export type ProblemReportComment = {
+  id: string;
+  authorUserId: string;
+  authorEmail: string | null;
+  isStaff: boolean;
+  body: string;
+  createdAt: string; // ISO
+};
+
+export const problemReports = pgTable("problem_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // users.id is the Google Auth uid (text), not a uuid — matches followup_reports/call_lists.
+  reporterUserId: text("reporter_user_id").notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  reporterEmail: text("reporter_email"),
+
+  // Which agency they were working in when they reported (context; kept if the agency is deleted).
+  agencyId: uuid("agency_id").references(() => agencies.id, { onDelete: 'set null' }),
+
+  body: text("body").notNull(),
+  // Optional "where I was" context the client attaches (e.g. the page path) to aid triage.
+  pageContext: text("page_context"),
+
+  status: text("status").notNull().default("open"), // 'open' | 'resolved'
+
+  // The two-way comment thread (reporter + admin/support). See ProblemReportComment.
+  comments: jsonb("comments").$type<ProblemReportComment[]>().default(sql`'[]'::jsonb`).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+}, (table) => ({
+  // The admin list query is "newest open first".
+  byStatus: index("problem_reports_status_idx").on(table.status, table.createdAt),
+}));
+
+// -----------------------------------------------------------------------------
 // 11. RELATIONS
 // -----------------------------------------------------------------------------
 
@@ -516,6 +619,18 @@ export const callListItemRelations = relations(callListItems, ({ one }) => ({
   list: one(callLists, { fields: [callListItems.listId], references: [callLists.id] }),
   lead: one(leads, { fields: [callListItems.leadId], references: [leads.id] }),
   calledBy: one(users, { fields: [callListItems.calledByUserId], references: [users.id] }),
+}));
+
+// Follow-up report relations
+export const followupReportRelations = relations(followupReports, ({ one }) => ({
+  agency: one(agencies, { fields: [followupReports.agencyId], references: [agencies.id] }),
+  createdBy: one(users, { fields: [followupReports.createdByUserId], references: [users.id] }),
+}));
+
+// Problem report relations
+export const problemReportRelations = relations(problemReports, ({ one }) => ({
+  reporter: one(users, { fields: [problemReports.reporterUserId], references: [users.id] }),
+  agency: one(agencies, { fields: [problemReports.agencyId], references: [agencies.id] }),
 }));
 
 // Offer relations
