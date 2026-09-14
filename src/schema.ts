@@ -586,7 +586,7 @@ export const problemReports = pgTable("problem_reports", {
 }));
 
 // -----------------------------------------------------------------------------
-// 10c. REVENUE ATTRIBUTION (Uploaded clinic exports: Bizzflo appointments & sales, Stripe payments)
+// 10c. REVENUE ATTRIBUTION (Uploaded clinic exports: Bizzflo appointments & sales, Stripe payments, Meta spend)
 // -----------------------------------------------------------------------------
 // Rows from files a user uploads, stored as-is so the revenue report is computed on read. Uploads
 // arrive incrementally (a month at a time, plus month-to-date files) and each one can change earlier
@@ -685,6 +685,29 @@ export const stripePayments = pgTable("stripe_payments", {
   ghlContactId: text("ghl_contact_id"),  // the export's contactId metadata column
 }, (table) => ({
   byLocationCharged: index("stripe_payments_location_charged_idx").on(table.locationId, table.chargedAt),
+}));
+
+// Meta ad spend per campaign per month, from uploaded Meta exports. Not campaign_spend: that table
+// holds spend per campaign row, and a campaign gets a row in every sub-account its leads land in (each
+// Springville campaign also has one in "LifeSculpts General Account" from late August 2026, with the
+// same Meta id), so a campaign's spend has no single row to go on. The revenue report assigns spend to
+// a clinic by campaign name instead.
+export const metaCampaignSpend = pgTable("meta_campaign_spend", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  agencyId: uuid("agency_id").notNull()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+  importId: uuid("import_id").notNull()
+    .references(() => revenueImports.id, { onDelete: 'cascade' }),
+
+  month: date("month").notNull(),           // first day of the spend month
+  metaCampaignId: text("meta_campaign_id"), // only when the export includes the Campaign ID column
+  campaignName: text("campaign_name").notNull(),
+  spend: numeric("spend", { precision: 12, scale: 2 }).notNull(),
+  leads: integer("leads"),
+}, (table) => ({
+  // Imports replace a month's rows campaign by campaign; the report reads an agency's month.
+  byAgencyMonth: index("meta_campaign_spend_agency_month_idx").on(table.agencyId, table.month),
 }));
 
 // -----------------------------------------------------------------------------
@@ -826,6 +849,7 @@ export const revenueImportRelations = relations(revenueImports, ({ one, many }) 
   appointments: many(bizzfloAppointments),
   sales: many(bizzfloSales),
   stripePayments: many(stripePayments),
+  metaCampaignSpend: many(metaCampaignSpend),
 }));
 
 export const bizzfloAppointmentRelations = relations(bizzfloAppointments, ({ one }) => ({
@@ -842,4 +866,9 @@ export const stripePaymentRelations = relations(stripePayments, ({ one }) => ({
   agency: one(agencies, { fields: [stripePayments.agencyId], references: [agencies.id] }),
   location: one(locations, { fields: [stripePayments.locationId], references: [locations.id] }),
   revenueImport: one(revenueImports, { fields: [stripePayments.importId], references: [revenueImports.id] }),
+}));
+
+export const metaCampaignSpendRelations = relations(metaCampaignSpend, ({ one }) => ({
+  agency: one(agencies, { fields: [metaCampaignSpend.agencyId], references: [agencies.id] }),
+  revenueImport: one(revenueImports, { fields: [metaCampaignSpend.importId], references: [revenueImports.id] }),
 }));

@@ -99,6 +99,13 @@
       "when": 1789406951076,
       "tag": "0013_revenue_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789412317008,
+      "tag": "0014_meta_campaign_spend",
+      "breakpoints": true
     }
   ]
 }
