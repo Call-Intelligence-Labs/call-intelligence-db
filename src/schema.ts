@@ -586,6 +586,108 @@ export const problemReports = pgTable("problem_reports", {
 }));
 
 // -----------------------------------------------------------------------------
+// 10c. REVENUE ATTRIBUTION (Uploaded clinic exports: Bizzflo appointments & sales, Stripe payments)
+// -----------------------------------------------------------------------------
+// Rows from files a user uploads, stored as-is so the revenue report is computed on read. Uploads
+// arrive incrementally (a month at a time, plus month-to-date files) and each one can change earlier
+// cohorts' numbers, so we keep rows rather than a computed snapshot. Design:
+// call-intelligence-web docs/engineering/revenue-attribution-uploads.md.
+
+// One row per uploaded file: what data a location has, and what each import replaced.
+export const revenueImports = pgTable("revenue_imports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  agencyId: uuid("agency_id").notNull()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+  // Null for the Stripe file, which covers every location in the agency.
+  locationId: uuid("location_id")
+    .references(() => locations.id, { onDelete: 'cascade' }),
+
+  kind: text("kind").notNull(), // 'bizzflo_appointments' | 'bizzflo_sales' | 'stripe_payments' | 'meta_campaigns'
+  fileName: text("file_name").notNull(),
+
+  // From the rows' own dates, not the file header — a month-to-date sales file still names the whole month.
+  coveredFrom: date("covered_from"),
+  coveredTo: date("covered_to"),
+  rowCount: integer("row_count").notNull(),
+  totals: jsonb("totals").$type<Record<string, number>>(), // e.g. { gross, net }, shown back to the uploader
+
+  // users.id is the Google Auth uid (text), not a uuid — matches followup_reports/call_lists.
+  uploadedByUserId: text("uploaded_by_user_id")
+    .references(() => users.id, { onDelete: 'set null' }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // The coverage query is "what has this location uploaded, per kind, newest first".
+  byLocationKind: index("revenue_imports_location_kind_idx").on(table.locationId, table.kind, table.createdAt),
+}));
+
+export const bizzfloAppointments = pgTable("bizzflo_appointments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull()
+    .references(() => locations.id, { onDelete: 'cascade' }),
+  importId: uuid("import_id").notNull()
+    .references(() => revenueImports.id, { onDelete: 'cascade' }),
+
+  customerName: text("customer_name"),
+  customerEmail: text("customer_email"), // lower-cased on import; the join key to sales, Stripe and leads
+  status: text("status").notNull(),      // 'Completed' | 'Checked In' | 'Completed & Paid' | 'Confirmed' | 'Cancelled' | 'No-Show'
+  service: text("service").notNull(),
+  date: date("date").notNull(),
+  time: text("time"),                    // "15:00:00 - 16:00:00", kept to order same-day visits
+}, (table) => ({
+  // Imports replace a location's rows inside a date range; the report reads a location's rows.
+  byLocationDate: index("bizzflo_appointments_location_date_idx").on(table.locationId, table.date),
+}));
+
+export const bizzfloSales = pgTable("bizzflo_sales", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  locationId: uuid("location_id").notNull()
+    .references(() => locations.id, { onDelete: 'cascade' }),
+  importId: uuid("import_id").notNull()
+    .references(() => revenueImports.id, { onDelete: 'cascade' }),
+
+  invoice: text("invoice").notNull(), // not unique: an invoice has one row per item line
+  date: date("date").notNull(),
+  customerName: text("customer_name"),
+  customerEmail: text("customer_email"), // lower-cased on import
+  type: text("type"),                    // 'Package' | 'Service' | 'Product' | ...
+  item: text("item").notNull(),
+  salesClerk: text("sales_clerk"),
+  commissionClerk: text("commission_clerk"),
+  total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+  refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
+  netTotal: numeric("net_total", { precision: 12, scale: 2 }).notNull(), // after refunds — what the report counts
+}, (table) => ({
+  byLocationDate: index("bizzflo_sales_location_date_idx").on(table.locationId, table.date),
+}));
+
+export const stripePayments = pgTable("stripe_payments", {
+  // Stripe's own id (ch_… / py_…). Export rows without one are failed or unconfirmed attempts and are skipped.
+  id: text("id").primaryKey(),
+
+  agencyId: uuid("agency_id").notNull()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+  // Assigned on import (GHL contactId → leads, else a location name in the description); may stay null.
+  locationId: uuid("location_id")
+    .references(() => locations.id, { onDelete: 'set null' }),
+  importId: uuid("import_id").notNull()
+    .references(() => revenueImports.id, { onDelete: 'cascade' }),
+
+  chargedAt: timestamp("charged_at", { withTimezone: true }).notNull(), // the export is UTC
+  status: text("status").notNull(),      // only 'Paid' counts as revenue
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  amountRefunded: numeric("amount_refunded", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),      // names the offer, e.g. "Springville Red Light Session - Olivia ($37)"
+  customerEmail: text("customer_email"),
+  ghlContactId: text("ghl_contact_id"),  // the export's contactId metadata column
+}, (table) => ({
+  byLocationCharged: index("stripe_payments_location_charged_idx").on(table.locationId, table.chargedAt),
+}));
+
+// -----------------------------------------------------------------------------
 // 11. RELATIONS
 // -----------------------------------------------------------------------------
 
@@ -714,4 +816,30 @@ export const webhookLogsRelations = relations(webhookLogs, ({ one }) => ({
 // Dialer Activity relations
 export const dialerActivityRelations = relations(dialerActivity, ({ one }) => ({
   location: one(locations, { fields: [dialerActivity.locationId], references: [locations.id] }),
+}));
+
+// Revenue attribution relations
+export const revenueImportRelations = relations(revenueImports, ({ one, many }) => ({
+  agency: one(agencies, { fields: [revenueImports.agencyId], references: [agencies.id] }),
+  location: one(locations, { fields: [revenueImports.locationId], references: [locations.id] }),
+  uploadedBy: one(users, { fields: [revenueImports.uploadedByUserId], references: [users.id] }),
+  appointments: many(bizzfloAppointments),
+  sales: many(bizzfloSales),
+  stripePayments: many(stripePayments),
+}));
+
+export const bizzfloAppointmentRelations = relations(bizzfloAppointments, ({ one }) => ({
+  location: one(locations, { fields: [bizzfloAppointments.locationId], references: [locations.id] }),
+  revenueImport: one(revenueImports, { fields: [bizzfloAppointments.importId], references: [revenueImports.id] }),
+}));
+
+export const bizzfloSaleRelations = relations(bizzfloSales, ({ one }) => ({
+  location: one(locations, { fields: [bizzfloSales.locationId], references: [locations.id] }),
+  revenueImport: one(revenueImports, { fields: [bizzfloSales.importId], references: [revenueImports.id] }),
+}));
+
+export const stripePaymentRelations = relations(stripePayments, ({ one }) => ({
+  agency: one(agencies, { fields: [stripePayments.agencyId], references: [agencies.id] }),
+  location: one(locations, { fields: [stripePayments.locationId], references: [locations.id] }),
+  revenueImport: one(revenueImports, { fields: [stripePayments.importId], references: [revenueImports.id] }),
 }));
