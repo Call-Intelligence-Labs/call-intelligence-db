@@ -636,6 +636,14 @@ export const bizzfloAppointments = pgTable("bizzflo_appointments", {
   service: text("service").notNull(),
   date: date("date").notNull(),
   time: text("time"),                    // "15:00:00 - 16:00:00", kept to order same-day visits
+
+  // Optional columns of the Appointments Report, ticked under Report Configuration. Null for files
+  // exported without them. "Booked by" is the inside sales team, "Staff/Resource" the person the
+  // client saw — together they give a conversion rate per person, which who-sold-it alone can't.
+  // Booking method reads "Walk-In" on every Springville row, so it can't tell web bookings apart yet.
+  bookedBy: text("booked_by"),
+  staffResource: text("staff_resource"),
+  bookingMethod: text("booking_method"),
 }, (table) => ({
   // Imports replace a location's rows inside a date range; the report reads a location's rows.
   byLocationDate: index("bizzflo_appointments_location_date_idx").on(table.locationId, table.date),
