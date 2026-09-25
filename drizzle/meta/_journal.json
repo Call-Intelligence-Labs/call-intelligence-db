@@ -113,6 +113,13 @@
       "when": 1790068361708,
       "tag": "0015_appointment_staff_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790352429193,
+      "tag": "0016_followup_report_archive",
+      "breakpoints": true
     }
   ]
 }

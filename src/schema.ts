@@ -535,6 +535,10 @@ export const followupReports = pgTable("followup_reports", {
   // The full FollowupsResponse (generatedAt, summary, threads, scannedCount, …). Null until 'done'.
   result: jsonb("result").$type<Record<string, unknown>>(),
 
+  // Set when the creator archives a finished report, to keep the list short. Archived reports are
+  // hidden from the list but kept, so an old report can still be reopened or restored.
+  archivedAt: timestamp("archived_at"),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(), // for polling / stuck-job detection
 }, (table) => ({
